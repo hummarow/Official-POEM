@@ -129,7 +129,6 @@ def main():
     # # Real dataset will be re-assigned in train function.
     # # test_envs only decide transforms; simply set to zero.
     dataset, _in_splits, _out_splits = get_dataset([0], args, hparams)
-    breakpoint()
 
     # print dataset information
     logger.nofmt("Dataset:")
