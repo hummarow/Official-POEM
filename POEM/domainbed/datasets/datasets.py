@@ -2,11 +2,14 @@
 
 import os
 import torch
+import h5py
 from PIL import Image, ImageFile
 from torchvision import transforms as T
 from torch.utils.data import TensorDataset
 from torchvision.datasets import MNIST, ImageFolder
 from torchvision.transforms.functional import rotate
+
+from domainbed.datasets import eeg_loader
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -204,6 +207,27 @@ class MultipleEnvironmentImageFolder(MultipleDomainDataset):
         self.num_classes = len(self.datasets[-1].classes)
 
 
+class EEG(MultipleDomainDataset):
+    CHECKPOINT_FREQ = 200
+    ENVIRONMENTS = [f'subject{n}' for n in range(0, 30)]
+    def __init__(self, root):
+        super().__init__()
+        root = os.path.join(root, "EEG/")
+        environments = [f.name for f in os.scandir(root)]
+        environments = sorted(environments)
+        self.environments = environments
+
+        self.datasets = []
+        for environment in environments:
+            path = os.path.join(root, environment)
+            env_dataset = eeg_loader.EEGDataset(path)
+
+            self.datasets.append(env_dataset)
+
+        self.input_shape = (63, 400)  # (channel, timestep(frame))
+        self.num_classes = 0  # Regression task
+
+
 class VLCS(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 200
     ENVIRONMENTS = ["C", "L", "S", "V"]
@@ -248,3 +272,4 @@ class TerraIncognita(MultipleEnvironmentImageFolder):
     def __init__(self, root):
         self.dir = os.path.join(root, "terra_incognita/")
         super().__init__(self.dir)
+

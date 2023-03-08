@@ -49,6 +49,8 @@ class Algorithm(torch.nn.Module):
         self.num_domains = num_domains
         self.hparams = hparams
 
+        self.classifier = nn.Linear(self.featurizer.n_outputs, num_classes) # Change if you want to use a different classifier
+
     def update(self, x, y, d, **kwargs):
         """
         Perform one update step, given a list of (x, y) tuples for all
@@ -90,7 +92,8 @@ class ERM(Algorithm):
         self.bool_task = hparams.bool_task
 
         self.featurizer = networks.Featurizer(input_shape, self.hparams)
-        self.classifier = nn.Linear(self.featurizer.n_outputs, num_classes)
+        # M01: Change the final layer to a regressor.
+        self.classifier = nn.Linear(self.featurizer.n_outputs, 1)
         self.network = nn.Sequential(self.featurizer, self.classifier)
 
         self.optimizer = get_optimizer(
@@ -104,6 +107,7 @@ class ERM(Algorithm):
             self.domain_hparam = self.hparams
             self.domain_hparam["domain"] = True
             self.featurizer_domain = networks.Featurizer(input_shape, self.domain_hparam)
+            # CM01: The domain-side final layer is still a classifier.
             self.classifier_domain = nn.Linear(self.featurizer_domain.n_outputs, num_domains)
             self.network_domain = nn.Sequential(self.featurizer_domain, self.classifier_domain)
 
@@ -115,6 +119,7 @@ class ERM(Algorithm):
             )
 
         if self.bool_task:
+            # TODO: Classifier_task? task가 뭔지?
             self.classifier_task = nn.Linear(self.featurizer_domain.n_outputs, 2)
             self.optimizer_task = get_optimizer(
                 hparams["optimizer"],
@@ -135,8 +140,12 @@ class ERM(Algorithm):
         self.optimizer.zero_grad()
 
         if self.bool_angle or self.bool_task:
-            network_list = {"class_feature": self.featurizer, "domain_feature": self.featurizer_domain,
-                            "class_classifier": self.classifier, "domain_classifier": self.classifier_domain}
+            network_list = {
+                            "class_feature": self.featurizer,
+                            "domain_feature": self.featurizer_domain,
+                            "class_classifier": self.classifier,
+                            "domain_classifier": self.classifier_domain,
+            }
             if self.bool_task:
                 network_list["task_classifier"] = self.classifier_task
 
@@ -238,7 +247,6 @@ class Mixstyle(Algorithm):
             network = resnet50_mixstyle_L234_p0d5_a0d1()
         self.featurizer = networks.ResNet(input_shape, self.hparams, network)
 
-        self.classifier = nn.Linear(self.featurizer.n_outputs, num_classes)
         self.network = nn.Sequential(self.featurizer, self.classifier)
         self.optimizer = self.new_optimizer(self.network.parameters())
 
@@ -269,7 +277,6 @@ class Mixstyle2(Algorithm):
             network = resnet50_mixstyle2_L234_p0d5_a0d1()
         self.featurizer = networks.ResNet(input_shape, self.hparams, network)
 
-        self.classifier = nn.Linear(self.featurizer.n_outputs, num_classes)
         self.network = nn.Sequential(self.featurizer, self.classifier)
         self.optimizer = self.new_optimizer(self.network.parameters())
 
@@ -452,7 +459,6 @@ class AbstractDANN(Algorithm):
 
         # Algorithms
         self.featurizer = networks.Featurizer(input_shape, self.hparams)
-        self.classifier = nn.Linear(self.featurizer.n_outputs, num_classes)
         self.discriminator = networks.MLP(self.featurizer.n_outputs, num_domains, self.hparams)
         self.class_embeddings = nn.Embedding(num_classes, self.featurizer.n_outputs)
 

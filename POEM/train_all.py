@@ -24,7 +24,7 @@ def main():
     parser.add_argument("name", type=str)
     parser.add_argument("configs", nargs="*")
     parser.add_argument("--data_dir", type=str, default="datadir/")
-    parser.add_argument("--dataset", type=str, default="PACS")
+    parser.add_argument("--dataset", type=str, default="EEG")
     parser.add_argument("--algorithm", type=str, default="ERM")
     parser.add_argument(
         "--trial_seed",
@@ -125,10 +125,11 @@ def main():
     torch.backends.cudnn.deterministic = args.deterministic
     torch.backends.cudnn.benchmark = not args.deterministic
 
-    # Dummy datasets for logging information.
-    # Real dataset will be re-assigned in train function.
-    # test_envs only decide transforms; simply set to zero.
+    # # Dummy datasets for logging information.
+    # # Real dataset will be re-assigned in train function.
+    # # test_envs only decide transforms; simply set to zero.
     dataset, _in_splits, _out_splits = get_dataset([0], args, hparams)
+    breakpoint()
 
     # print dataset information
     logger.nofmt("Dataset:")
@@ -157,7 +158,6 @@ def main():
     ###########################################################################
     all_records = []
     results = collections.defaultdict(list)
-
     for test_env in args.test_envs:
         res, records = train(
             test_env,
