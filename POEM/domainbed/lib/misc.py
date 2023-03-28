@@ -102,6 +102,12 @@ class SplitIterator:
         self.test_envs = test_envs
 
     def train(self, iterable, index=False):
+        '''
+        Iterator를 반환함.
+        기존의 iterator와 똑같이 iterable속 item을 순차로 yield함.
+        하지만 self.test_envs에 그 index가 없다면 스킵, self.test_envs에 있는 index를 반환함.
+        index가 True라면 (i, x)를 반환(yield), False라면 x만 반환.
+        '''
         return index_conditional_iterate(lambda idx: idx in self.test_envs, iterable, index)
 
     def test(self, iterable, index=False):

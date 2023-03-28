@@ -97,15 +97,26 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     logger.info(f"steps-per-epoch for each domain: {prt_steps} -> min = {steps_per_epoch:.2f}")
 
     # setup loaders
-    train_loaders = [
-        InfiniteDataLoader(
-            dataset=env,
-            weights=env_weights,
-            batch_size=batch_size,
-            num_workers=dataset.N_WORKERS,
+#     train_loaders = [
+#         InfiniteDataLoader(
+#             dataset=env,
+#             weights=env_weights,
+#             batch_size=batch_size,
+#             num_workers=dataset.N_WORKERS,
+#         )
+#         for env_i, ((env, env_weights), batch_size) in enumerate(iterator.train(zip(in_splits, batch_sizes)))
+#     ]
+    train_loaders = []
+    for env_i, ((env, env_weights), batch_size) in enumerate(iterator.train(zip(in_splits, batch_sizes))):
+        print(env_i)
+        train_loaders.append(
+            InfiniteDataLoader(
+                dataset=env,
+                weights=env_weights,
+                batch_size=batch_size,
+                num_workers=dataset.N_WORKERS,
+            )
         )
-        for env_i, ((env, env_weights), batch_size) in enumerate(iterator.train(zip(in_splits, batch_sizes)))
-    ]
     #
     # for env_i, ((env, env_weights), batch_size) in enumerate(iterator.train(zip(in_splits, batch_sizes))):
     #     print(env_i)
@@ -136,6 +147,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         dataset.num_classes,
         len(dataset) - len(test_envs),
         hparams,
+        criterion='coordinate',
     )
 
     algorithm.to(device)
@@ -171,7 +183,8 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         logger,
         evalmode=args.evalmode,
         debug=args.debug,
-        target_env=target_env
+        target_env=target_env,
+        criterion='coordinate',
     )
 
     swad = None
@@ -269,8 +282,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
                 algorithm.cuda()
                 if not args.debug:
                     torch.save(save_dict, path)
-                else:
-                    logger.debug("DEBUG Mode -> no save (org path: %s)" % path)
+                logger.debug("DEBUG Mode -> no save (org path: %s)" % path)
 
             # swad
             if swad:

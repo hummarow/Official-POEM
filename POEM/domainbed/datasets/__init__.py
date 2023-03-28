@@ -6,7 +6,7 @@ from domainbed.lib import misc
 from domainbed.datasets import transforms as DBT
 
 
-def set_transfroms(dset, data_type, hparams, algorithm_class=None):
+def set_transforms(dset, data_type, hparams, algorithm_class=None):
     """
     Args:
         data_type: ['train', 'valid', 'test', 'mnist']
@@ -30,6 +30,9 @@ def set_transfroms(dset, data_type, hparams, algorithm_class=None):
     elif data_type == "mnist":
         # No augmentation for mnist
         dset.transforms = {"x": lambda x: x}
+    elif data_type == "eeg":
+        # No augmentation for eeg
+        dset.transforms = {"x": lambda x: np.expand_dims(x, axis=0)}
     else:
         raise ValueError(data_type)
 
@@ -41,6 +44,7 @@ def set_transfroms(dset, data_type, hparams, algorithm_class=None):
 def get_dataset(test_envs, args, hparams, algorithm_class=None):
     """Get dataset and split."""
     is_mnist = "MNIST" in args.dataset
+    is_eeg = "EEG" in args.dataset
     dataset = vars(datasets)[args.dataset](args.data_dir)
     #  if not isinstance(dataset, MultipleEnvironmentImageFolder):
     #      raise ValueError("SMALL image datasets are not implemented (corrupted), for transform.")
@@ -67,9 +71,12 @@ def get_dataset(test_envs, args, hparams, algorithm_class=None):
         if is_mnist:
             in_type = "mnist"
             out_type = "mnist"
+        elif is_eeg:
+            in_type = "eeg"
+            out_type = "eeg"
 
-        set_transfroms(in_, in_type, hparams, algorithm_class)
-        set_transfroms(out, out_type, hparams, algorithm_class)
+        set_transforms(in_, in_type, hparams, algorithm_class)
+        set_transforms(out, out_type, hparams, algorithm_class)
 
         if hparams["class_balanced"]:
             in_weights = misc.make_weights_for_balanced_classes(in_)
