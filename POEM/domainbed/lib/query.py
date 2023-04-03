@@ -144,6 +144,18 @@ class Q(object):
         selector = make_selector_fn(selector)
         return max(self._list, key=selector)
 
+    def argmin(self, selector):
+        selector = make_selector_fn(selector)
+        return min(self._list, key=selector)
+
+    def argbest(self, selector, mode="max"):
+        if mode == "max":
+            return self.argmax(selector)
+        elif mode == "min":
+            return self.argmin(selector)
+        else:
+            raise ValueError
+
     def filter(self, fn):
         return Q([x for x in self._list if fn(x)])
 

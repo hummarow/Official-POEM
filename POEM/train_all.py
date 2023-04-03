@@ -53,6 +53,7 @@ def main():
     parser.add_argument("--domain_swad", type=bool, default=True, help="bool swad to domain network")
     parser.add_argument("--bool_swad", type=bool, default=False, help="bool swad to networks")
     parser.add_argument("--bool_task", type=bool, default=False, help="bool task to networks")
+    parser.add_argument("--lr", type=float, default=0.0, help="learning rate")
     parser.add_argument(
         "--evalmode",
         default="fast",
@@ -70,6 +71,8 @@ def main():
     hparams.argv_update(left_argv)
     hparams["bool_angle"] = args.bool_angle
     hparams["bool_task"] = args.bool_task
+    if args.lr > 0:
+        hparams["lr"] = args.lr
 
     # setup debug
     if args.debug:
@@ -182,7 +185,7 @@ def main():
     table = PrettyTable(["Selection"] + dataset.environments + ["Avg."])
     for key, row in results.items():
         row.append(np.mean(row))
-        row = [f"{acc:.3%}" for acc in row]
+        row = [f"{metric:.3}" for metric in row]
         table.add_row([key] + row)
     logger.nofmt(table)
 

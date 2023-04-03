@@ -2,6 +2,7 @@ import collections
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 from domainbed.lib.fast_data_loader import FastDataLoader
 
 if torch.cuda.is_available():
@@ -20,8 +21,8 @@ def eval_from_loader(algorithm, loader, weights,
                          criterion_angle=nn.CrossEntropyLoss(), # similarity loss
                          debug=False,
                          ):
-    correct = 0
-    domain_correct = 0
+    metric = 0
+    domain_metric = 0
     total = 0
     losssum = 0.0
     loss_task_sum = 0.0
@@ -63,20 +64,20 @@ def eval_from_loader(algorithm, loader, weights,
         batch_weights = batch_weights.to(device)
         if isinstance(criterion_category, nn.CrossEntropyLoss):
             if logits.size(1) == 1:
-                correct += (logits.gt(0).eq(y).float() * batch_weights).sum().item()
+                metric += (logits.gt(0).eq(y).float() * batch_weights).sum().item()
             else:
-                correct += (logits.argmax(1).eq(y).float() * batch_weights).sum().item()
+                metric += (logits.argmax(1).eq(y).float() * batch_weights).sum().item()
         elif isinstance(criterion_category, nn.MSELoss):
             pdist = nn.PairwiseDistance(p=2.0)
-            correct += torch.mean(pdist(logits, y)).item()
+            metric += pdist(logits, y).sum().item()
 
         total += batch_weights.sum().item()
 
         if bool_angle or bool_task:
             if domain_logits.size(1) == 1:
-                domain_correct += (domain_logits.gt(0).eq(domain_label).float() * batch_weights).sum().item()
+                domain_metric += (domain_logits.gt(0).eq(domain_label).float() * batch_weights).sum().item()
             else:
-                domain_correct += (domain_logits.argmax(1).eq(domain_label).float() * batch_weights).sum().item()
+                domain_metric += (domain_logits.argmax(1).eq(domain_label).float() * batch_weights).sum().item()
 
         if bool_task:
             loss_task1 = criterion_task(algorithm.predict_task(algorithm.extract(x)), torch.tensor([0] * int(x.shape[0])).to(device))
@@ -91,16 +92,16 @@ def eval_from_loader(algorithm, loader, weights,
 
     algorithm.train()
 
-    acc = correct / total
+    metric_average = metric / total
     loss = losssum / total
 
     if bool_angle or bool_task:
-        domain_acc = domain_correct / total
+        domain_metric_average = domain_metric / total
         domain_loss = domain_losssum / total
 
-        return acc, loss, domain_acc, domain_loss, loss_task_sum, loss_angle_sum
+        return metric_average, loss, domain_metric_average, domain_loss, loss_task_sum, loss_angle_sum
     else:
-        return acc, loss
+        return metric_average, loss
 
 
 def accuracy_from_loader(algorithm, loader, weights,
@@ -172,11 +173,13 @@ class Evaluator:
             self.criterion_domain=nn.CrossEntropyLoss()
             self.criterion_task=nn.CrossEntropyLoss()
             self.criterion_angle=nn.CrossEntropyLoss()
+            self.best = 'max'
         elif criterion == 'coordinate':
             self.criterion_category=nn.MSELoss()
             self.criterion_domain=nn.CrossEntropyLoss()
             self.criterion_task=nn.CrossEntropyLoss()
             self.criterion_angle=nn.CrossEntropyLoss()
+            self.best = 'min'
         else:
             raise ValueError("criterion should be either 'classify' or 'regression'")
 
@@ -202,7 +205,7 @@ class Evaluator:
         summaries["task_eval_loss"] = 0.0
         summaries["angle_eval_loss"] = 0.0
         summaries["domain_eval_loss"] = 0.0
-        accuracies = {}
+        metric_values = {}
         losses = {}
 
         # order: in_splits + out_splits.
@@ -216,17 +219,17 @@ class Evaluator:
                 continue
 
             is_test = env_num in self.test_envs
-            acc, loss = _eval(algorithm, loader_kwargs, weights, debug=self.debug,
+            metric_value, loss = _eval(algorithm, loader_kwargs, weights, debug=self.debug,
                               criterion_category=self.criterion_category,
                               criterion_domain=self.criterion_domain,
                               criterion_task=self.criterion_task,
                               criterion_angle=self.criterion_angle,
                               )
-            accuracies[name] = acc
+            metric_values[name] = metric_value
             losses[name] = loss
 
             if env_num in self.train_envs:
-                summaries["train_" + inout] += acc / n_train_envs
+                summaries["train_" + inout] += metric_value / n_train_envs
                 if inout == "out":
                     summaries["tr_" + inout + "loss"] += loss / n_train_envs
                     # SWAD
@@ -250,10 +253,9 @@ class Evaluator:
                         # accuracies["ac_d_" + name +"_"+str(num)] = domain_acc
                         # losses["lo_d_" + name+"_"+str(num)] = domain_loss
             elif is_test:
-                summaries["test_" + inout] += acc / n_test_envs
-
+                summaries["test_" + inout] += metric_value / n_test_envs
 
         if ret_losses:
-            return accuracies, summaries, losses
+            return metric_values, summaries, losses
         else:
-            return accuracies, summaries
+            return metric_values, summaries

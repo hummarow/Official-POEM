@@ -41,6 +41,9 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     dataset, in_splits, out_splits = get_dataset(test_envs, args, hparams, algorithm_class)
     # domain info for domain network to use angle loss
     test_splits = []
+
+    # If indomain_test is True, split the val set into val/test sets.
+    # If not, use the val set as the test set. inTE will not be generated.
     if hparams.indomain_test > 0.0:
         logger.info("!!! In-domain test mode On !!!")
         assert hparams["val_augment"] is False, (
@@ -205,7 +208,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         # batches: {data_key: [env0_tensor, ...], ...}
         batches = misc.merge_dictlist(batches_dictlist)
 
-        # to device
+        # to devic
         batches = {
             key: [tensor.to(device) for tensor in tensorlist] for key, tensorlist in batches.items()
         }
@@ -235,14 +238,14 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
                 results[key] = np.mean(val)
 
             eval_start_time = time.time()
-            accuracies, summaries = evaluator.evaluate(algorithm)
+            metric_values, summaries = evaluator.evaluate(algorithm)
             results["eval_time"] = time.time() - eval_start_time
 
             # results = (epochs, loss, step, step_time)
-            results_keys = list(summaries.keys()) + sorted(accuracies.keys()) + list(results.keys())
+            results_keys = list(summaries.keys()) + sorted(metric_values.keys()) + list(results.keys())
             # merge results
             results.update(summaries)
-            results.update(accuracies)
+            results.update(metric_values)
 
             # print
             if results_keys != last_results_keys:
@@ -260,7 +263,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
             checkpoint_vals = collections.defaultdict(lambda: [])
 
             writer.add_scalars_with_prefix(summaries, step, f"{testenv_name}/summary/")
-            writer.add_scalars_with_prefix(accuracies, step, f"{testenv_name}/all/")
+            writer.add_scalars_with_prefix(metric_values, step, f"{testenv_name}/all/")
 
             if args.model_save and step >= args.model_save:
                 ckpt_dir = args.out_dir / "checkpoints"
@@ -309,8 +312,8 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     # find best
     logger.info("---")
     records = Q(records)
-    oracle_best = records.argmax("test_out")["test_in"]
-    iid_best = records.argmax("train_out")["test_in"]
+    oracle_best = records.argbest("test_out", evaluator.best)["test_in"]
+    iid_best = records.argbest("train_out", evaluator.best)["test_in"]
     last = records[-1]["test_in"]
 
     if hparams.indomain_test:
@@ -319,7 +322,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     else:
         in_key = "train_out"
 
-    iid_best_indomain = records.argmax("train_out")[in_key]
+    iid_best_indomain = records.argbest("train_out", evaluator.best)[in_key]
     last_indomain = records[-1][in_key]
 
     ret = {
@@ -339,8 +342,8 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
             swa_utils.update_bn(train_minibatches_iterator, swad_algorithm, n_steps)
 
         logger.warning("Evaluate SWAD ...")
-        accuracies, summaries = evaluator.evaluate(swad_algorithm)
-        results = {**summaries, **accuracies}
+        metric_values, summaries = evaluator.evaluate(swad_algorithm)
+        results = {**summaries, **metric_values}
         start = swad_algorithm.start_step
         end = swad_algorithm.end_step
         step_str = f" [{start}-{end}]  (N={swad_algorithm.n_averaged})"
@@ -350,7 +353,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         ret["SWAD"] = results["test_in"]
         ret["SWAD (inD)"] = results[in_key]
 
-    for k, acc in ret.items():
-        logger.info(f"{k} = {acc:.3%}")
+    for k, metric in ret.items():
+        logger.info(f"{k} = {metric:.3}")
 
     return ret, records
