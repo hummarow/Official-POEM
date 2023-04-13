@@ -83,6 +83,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     train_envs = sorted(set(range(n_envs)) - set(test_envs))
     iterator = misc.SplitIterator(test_envs)
     batch_sizes = np.full([n_envs], hparams["batch_size"], dtype=np.int)
+    breakpoint()
 
     batch_sizes[test_envs] = 0
     batch_sizes = batch_sizes.tolist()

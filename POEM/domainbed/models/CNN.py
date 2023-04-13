@@ -29,7 +29,7 @@ class ConvBlock(nn.Module):
 
 
 class CNN(nn.Module):
-    def __init__(self, in_channels=1):
+    def __init__(self, in_channels=1, out_features=3):
         super().__init__()
         # backbone network
         conv1 = ConvBlock(1, 16)
@@ -44,13 +44,15 @@ class CNN(nn.Module):
         dense2 = nn.Sequential(nn.Linear(1024, 1024),
                                     nn.ReLU(inplace=True),
                                     )
-        dense3 = nn.Linear(1024, 3)
+        dense3 = nn.Linear(1024, out_features)
 
         self.featurizer = nn.Sequential(conv1,
                                         conv2,
                                         conv3,
                                         conv4,
+                                        self.flat,
                                         )
+        self.featurizer.n_outputs = 12800
         self.dense = nn.Sequential(dense1,
                                    dense2,
                                    dense3,
@@ -58,8 +60,7 @@ class CNN(nn.Module):
 
     def forward(self, x):
         f = self.featurizer(x)
-        flat_f = self.flat(f)
-        v = self.dense(flat_f)
+        v = self.dense(f)
         return v
 
     def _init_params(self):

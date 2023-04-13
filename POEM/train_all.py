@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import PIL
 import torch
 import torchvision
@@ -49,10 +50,11 @@ def main():
     parser.add_argument("--tb_freq", default=10)
     parser.add_argument("--debug", action="store_true", help="Run w/ debug mode")
     parser.add_argument("--show", action="store_true", help="Show args and hparams w/o run")
-    parser.add_argument("--bool_angle", type=bool, default=False, help="bool angle loss")
+    # parser.add_argument("--bool_angle", type=bool, default=False, help="bool angle loss")
+    parser.add_argument("--bool_angle", action="store_true", help="bool angle loss")
     parser.add_argument("--domain_swad", type=bool, default=True, help="bool swad to domain network")
-    parser.add_argument("--bool_swad", type=bool, default=False, help="bool swad to networks")
-    parser.add_argument("--bool_task", type=bool, default=False, help="bool task to networks")
+    parser.add_argument("--bool_swad", action="store_true", help="bool swad to networks")
+    parser.add_argument("--bool_task", action="store_true", help="bool task to networks")
     parser.add_argument("--lr", type=float, default=0.0, help="learning rate")
     parser.add_argument(
         "--evalmode",
@@ -182,12 +184,22 @@ def main():
     logger.info("Algorithm: %s" % args.algorithm)
     logger.info("Dataset: %s" % args.dataset)
 
-    table = PrettyTable(["Selection"] + dataset.environments + ["Avg."])
+#     table = PrettyTable(["Selection"] + dataset.environments + ["Avg."])
+#     result_df = pd.DataFrame(columns=['Selection'] + dataset.environments + ['Average'])
+    table = PrettyTable(["Selection"] + [i for i in args.test_envs] + ['Average'])
+    result_df = pd.DataFrame(columns=['Selection'] + [i for i in args.test_envs] + ['Average'])
     for key, row in results.items():
         row.append(np.mean(row))
         row = [f"{metric:.3}" for metric in row]
         table.add_row([key] + row)
     logger.nofmt(table)
+
+    for key, row in results.items():
+        row.append(np.mean(row))
+        row = [f"{metric:.3}" for metric in row]
+        result_df.loc[len(result_df)] = row
+
+    result_df.to_csv(args.out_dir / 'result.csv')
 
 
 if __name__ == "__main__":

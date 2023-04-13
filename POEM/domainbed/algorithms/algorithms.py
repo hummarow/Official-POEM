@@ -101,9 +101,9 @@ class ERM(Algorithm):
 
         network = 'conv'
         if network == 'conv':
-            self.featurizer = None
-            self.classifier = None
-            self.network = CNN(input_shape[0])
+            self.network = CNN(input_shape[0], out_features=3)
+            self.featurizer = self.network.featurizer
+            self.classifier = self.network.dense
         else:
             self.featurizer = networks.Featurizer(input_shape, self.hparams)
             # M01: Change the final layer to a regressor.
@@ -120,10 +120,16 @@ class ERM(Algorithm):
         if self.bool_angle or self.bool_task:
             self.domain_hparam = self.hparams
             self.domain_hparam["domain"] = True
-            self.featurizer_domain = networks.Featurizer(input_shape, self.domain_hparam)
-            # CM01: The domain-side final layer is still a classifier.
-            self.classifier_domain = nn.Linear(self.featurizer_domain.n_outputs, num_domains)
-            self.network_domain = nn.Sequential(self.featurizer_domain, self.classifier_domain)
+            if network == 'conv':
+                self.network_domain = CNN(input_shape[0], out_features=num_domains)
+                self.featurizer_domain = self.network_domain.featurizer
+                self.classifier_domain = self.network_domain.dense
+
+            else:
+                self.featurizer_domain = networks.Featurizer(input_shape, self.domain_hparam)
+                # CM01: The domain-side final layer is still a classifier.
+                self.classifier_domain = nn.Linear(self.featurizer_domain.n_outputs, num_domains)
+                self.network_domain = nn.Sequential(self.featurizer_domain, self.classifier_domain)
 
             self.optimizer_domain = get_optimizer(
                 hparams["optimizer"],
