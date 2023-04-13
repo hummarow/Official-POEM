@@ -38,12 +38,15 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     #######################################################
     args.real_test_envs = test_envs  # for log
     algorithm_class = algorithms.get_algorithm_class(args.algorithm)
+    # in_splits은 train set, out_splits은 validation set.
     dataset, in_splits, out_splits = get_dataset(test_envs, args, hparams, algorithm_class)
     # domain info for domain network to use angle loss
     test_splits = []
 
     # If indomain_test is True, split the val set into val/test sets.
     # If not, use the val set as the test set. inTE will not be generated.
+    # validation set에서의 성능을 최종 성능으로 사용하지 않고,
+    # test set에서의 성능을 사용하기 위함.
     if hparams.indomain_test > 0.0:
         logger.info("!!! In-domain test mode On !!!")
         assert hparams["val_augment"] is False, (
@@ -83,7 +86,6 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     train_envs = sorted(set(range(n_envs)) - set(test_envs))
     iterator = misc.SplitIterator(test_envs)
     batch_sizes = np.full([n_envs], hparams["batch_size"], dtype=np.int)
-    breakpoint()
 
     batch_sizes[test_envs] = 0
     batch_sizes = batch_sizes.tolist()
@@ -101,17 +103,20 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     logger.info(f"steps-per-epoch for each domain: {prt_steps} -> min = {steps_per_epoch:.2f}")
 
     # setup loaders
-#     train_loaders = [
-#         InfiniteDataLoader(
-#             dataset=env,
-#             weights=env_weights,
-#             batch_size=batch_size,
-#             num_workers=dataset.N_WORKERS,
-#         )
-#         for env_i, ((env, env_weights), batch_size) in enumerate(iterator.train(zip(in_splits, batch_sizes)))
-#     ]
+    #     train_loaders = [
+    #         InfiniteDataLoader(
+    #             dataset=env,
+    #             weights=env_weights,
+    #             batch_size=batch_size,
+    #             num_workers=dataset.N_WORKERS,
+    #         )
+    #         for env_i, ((env, env_weights), batch_size) in enumerate(iterator.train(zip(in_splits, batch_sizes)))
+    #     ]
     train_loaders = []
-    for env_i, ((env, env_weights), batch_size) in enumerate(iterator.train(zip(in_splits, batch_sizes))):
+    # test set을 제외한 in_splits를 train_loaders에 추가
+    for env_i, ((env, env_weights), batch_size) in enumerate(
+        iterator.train(zip(in_splits, batch_sizes))
+    ):
         print(env_i)
         train_loaders.append(
             InfiniteDataLoader(
@@ -121,11 +126,6 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
                 num_workers=dataset.N_WORKERS,
             )
         )
-    #
-    # for env_i, ((env, env_weights), batch_size) in enumerate(iterator.train(zip(in_splits, batch_sizes))):
-    #     print(env_i)
-    #     print(env)
-    # exit()
 
     # setup eval loaders
     eval_loaders_kwargs = []
@@ -151,7 +151,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         dataset.num_classes,
         len(dataset) - len(test_envs),
         hparams,
-        criterion='coordinate',
+        criterion="coordinate",
     )
 
     algorithm.to(device)
@@ -188,7 +188,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         evalmode=args.evalmode,
         debug=args.debug,
         target_env=target_env,
-        criterion='coordinate',
+        criterion="coordinate",
     )
 
     swad = None
@@ -213,8 +213,9 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         batches = {
             key: [tensor.to(device) for tensor in tensorlist] for key, tensorlist in batches.items()
         }
-
+        # 배치 parse
         inputs = {**batches, "step": step}
+        # Train
         step_vals = algorithm.update(**inputs)
 
         for key, val in step_vals.items():
@@ -243,7 +244,9 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
             results["eval_time"] = time.time() - eval_start_time
 
             # results = (epochs, loss, step, step_time)
-            results_keys = list(summaries.keys()) + sorted(metric_values.keys()) + list(results.keys())
+            results_keys = (
+                list(summaries.keys()) + sorted(metric_values.keys()) + list(results.keys())
+            )
             # merge results
             results.update(summaries)
             results.update(metric_values)
@@ -290,6 +293,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
 
             # swad
             if swad:
+
                 def prt_results_fn(results, avgmodel):
                     step_str = f" [{avgmodel.start_step}-{avgmodel.end_step}]"
                     row = misc.to_row([results[key] for key in results_keys if key in results])
@@ -303,7 +307,9 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
                     logger.info("SWAD valley is dead -> early stop !")
                     break
 
-                swad_algorithm = swa_utils.AveragedModel(algorithm, domain_swad=args.domain_swad)  # reset
+                swad_algorithm = swa_utils.AveragedModel(
+                    algorithm, domain_swad=args.domain_swad
+                )  # reset
 
         # if step % args.tb_freq == 0:
         #     # add step values only for tb log

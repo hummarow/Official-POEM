@@ -20,6 +20,7 @@ from domainbed.lib.writers import get_writer
 from domainbed.lib.logger import Logger
 from domainbed.trainer import train
 
+
 def main():
     parser = argparse.ArgumentParser(description="Domain generalization")
     parser.add_argument("name", type=str)
@@ -52,7 +53,9 @@ def main():
     parser.add_argument("--show", action="store_true", help="Show args and hparams w/o run")
     # parser.add_argument("--bool_angle", type=bool, default=False, help="bool angle loss")
     parser.add_argument("--bool_angle", action="store_true", help="bool angle loss")
-    parser.add_argument("--domain_swad", type=bool, default=True, help="bool swad to domain network")
+    parser.add_argument(
+        "--domain_swad", type=bool, default=True, help="bool swad to domain network"
+    )
     parser.add_argument("--bool_swad", action="store_true", help="bool swad to networks")
     parser.add_argument("--bool_task", action="store_true", help="bool task to networks")
     parser.add_argument("--lr", type=float, default=0.0, help="learning rate")
@@ -163,6 +166,7 @@ def main():
     all_records = []
     results = collections.defaultdict(list)
     for test_env in args.test_envs:
+        # 메인 알고리즘은 domainbed의 trainer.py에 있음
         res, records = train(
             test_env,
             args=args,
@@ -184,10 +188,10 @@ def main():
     logger.info("Algorithm: %s" % args.algorithm)
     logger.info("Dataset: %s" % args.dataset)
 
-#     table = PrettyTable(["Selection"] + dataset.environments + ["Avg."])
-#     result_df = pd.DataFrame(columns=['Selection'] + dataset.environments + ['Average'])
-    table = PrettyTable(["Selection"] + [i for i in args.test_envs] + ['Average'])
-    result_df = pd.DataFrame(columns=['Selection'] + [i for i in args.test_envs] + ['Average'])
+    #     table = PrettyTable(["Selection"] + dataset.environments + ["Avg."])
+    #     result_df = pd.DataFrame(columns=['Selection'] + dataset.environments + ['Average'])
+    table = PrettyTable(["Selection"] + [i for i in args.test_envs] + ["Average"])
+    result_df = pd.DataFrame(columns=["Selection"] + [i for i in args.test_envs] + ["Average"])
     for key, row in results.items():
         row.append(np.mean(row))
         row = [f"{metric:.3}" for metric in row]
@@ -199,7 +203,7 @@ def main():
         row = [f"{metric:.3}" for metric in row]
         result_df.loc[len(result_df)] = row
 
-    result_df.to_csv(args.out_dir / 'result.csv')
+    result_df.to_csv(args.out_dir / "result.csv")
 
 
 if __name__ == "__main__":

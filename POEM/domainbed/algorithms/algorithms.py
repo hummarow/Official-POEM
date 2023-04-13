@@ -89,18 +89,20 @@ class ERM(Algorithm):
     Empirical Risk Minimization (ERM)
     """
 
-    def __init__(self, input_shape, num_classes, num_domains, hparams, criterion='coordinate'):
+    def __init__(self, input_shape, num_classes, num_domains, hparams, criterion="coordinate"):
         super(ERM, self).__init__(input_shape, num_classes, num_domains, hparams)
         self.bool_angle = hparams.bool_angle
         self.bool_task = hparams.bool_task
 
-        if criterion == 'coordinate':
+        if criterion == "coordinate":
             self.criterion_category = nn.MSELoss()
         else:
             self.criterion_category = nn.CrossEntropyLoss()
 
-        network = 'conv'
-        if network == 'conv':
+        # 우선 conv만 사용
+        network = "conv"
+        if network == "conv":
+            # CNN 불러온 뒤 featurizer와 dense 분리.
             self.network = CNN(input_shape[0], out_features=3)
             self.featurizer = self.network.featurizer
             self.classifier = self.network.dense
@@ -117,14 +119,15 @@ class ERM(Algorithm):
             weight_decay=self.hparams["weight_decay"],
         )
 
+        # Similarity loss, Discrimination loss 둘 중 하나라도 사용되면,
+        # domain-side network를 생성하고 optimizer를 생성한다.
         if self.bool_angle or self.bool_task:
             self.domain_hparam = self.hparams
             self.domain_hparam["domain"] = True
-            if network == 'conv':
+            if network == "conv":
                 self.network_domain = CNN(input_shape[0], out_features=num_domains)
                 self.featurizer_domain = self.network_domain.featurizer
                 self.classifier_domain = self.network_domain.dense
-
             else:
                 self.featurizer_domain = networks.Featurizer(input_shape, self.domain_hparam)
                 # CM01: The domain-side final layer is still a classifier.
@@ -138,6 +141,8 @@ class ERM(Algorithm):
                 weight_decay=self.hparams["weight_decay"],
             )
 
+        # Discrimination loss를 사용한다면,
+        # 무슨 feature인지 판별하는 classifier를 생성하고 optimizer를 생성한다.
         if self.bool_task:
             self.classifier_task = nn.Linear(self.featurizer_domain.n_outputs, 2)
             self.optimizer_task = get_optimizer(
@@ -147,23 +152,24 @@ class ERM(Algorithm):
                 weight_decay=self.hparams["weight_decay"],
             )
 
-
     def update(self, x, y, d, **kwargs):
         all_x = torch.cat(x)
         all_y = torch.cat(y)
-
+        # Loss <- category loss
         loss = self.criterion_category(self.predict(all_x), all_y)
 
-        output = {"loss":loss.item()}
+        output = {"loss": loss.item()}
 
         self.optimizer.zero_grad()
 
+        # Similarity loss, Discrimination loss 둘 중 하나라도 사용되면
+        # feature 추출 후 loss 계산.
         if self.bool_angle or self.bool_task:
             network_list = {
-                            "class_feature": self.featurizer,
-                            "domain_feature": self.featurizer_domain,
-                            "class_classifier": self.classifier,
-                            "domain_classifier": self.classifier_domain,
+                "class_feature": self.featurizer,
+                "domain_feature": self.featurizer_domain,
+                "class_classifier": self.classifier,
+                "domain_classifier": self.classifier_domain,
             }
             if self.bool_task:
                 network_list["task_classifier"] = self.classifier_task
@@ -174,11 +180,12 @@ class ERM(Algorithm):
             feature_domain = self.featurizer_domain(all_x)
 
             self.optimizer_domain.zero_grad()
-
+            # loss_domain <- domain loss
             loss_domain = F.cross_entropy(self.predict_domain(all_x), all_d)
             output["loss_domain"] = loss_domain.item()
 
             if self.bool_angle:
+                # loss_angle <- similarity loss
                 loss_angle = torch.abs(F.cosine_similarity(feature_class, feature_domain, dim=1))
                 loss_angle = torch.mean(loss_angle)
                 output["angle_loss"] = loss_angle.item()
@@ -186,10 +193,12 @@ class ERM(Algorithm):
             if self.bool_task:
                 task_label = [0] * all_d.shape[0] + [1] * all_y.shape[0]
                 task_label = torch.tensor(task_label).to("cuda")
-                task_features = torch.tensor(torch.cat((feature_class.clone(), feature_domain.clone()))).to("cuda")
+                task_features = torch.tensor(
+                    torch.cat((feature_class.clone(), feature_domain.clone()))
+                ).to("cuda")
+                # loss_task <- discrimination loss
                 loss_task = F.cross_entropy(self.classifier_task(task_features), task_label)
                 output["task_loss"] = loss_task.item()
-
 
             # for key in network_list.keys():
             #     if "class_classifier" in key or "domain_classifier" in key:
@@ -199,6 +208,7 @@ class ERM(Algorithm):
             #         for param in network_list[key].parameters():
             #             param.requires_grad = False
 
+            # label classifier, domain classifier의 grad 계산
             loss.backward(retain_graph=True)
             loss_domain.backward(retain_graph=True)
 
@@ -210,6 +220,7 @@ class ERM(Algorithm):
                 loss = loss + loss_task
                 loss_domain = loss_domain + loss_task
 
+        # Similarity loss, Discrimination loss를 더한 loss의 grad 다시 계산.
         if self.bool_angle or self.bool_task:
             # for key in network_list.keys():
             #     if "domain_feature" in key or "task" in key:
@@ -227,17 +238,17 @@ class ERM(Algorithm):
             #     else:
             #         for param in network_list[key].parameters():
             #             param.requires_grad = False
-
+        # POEM이 아니라면 label classifier의 grad만 계산되고,
+        # POEM이라면 label classifier, domain classifier, similarity loss, discrimination loss가 전부 포함된 loss의 grad 계산.
         loss.backward()
         if self.bool_angle or self.bool_task:
-        #     for key in network_list.keys():
-        #         for param in network_list[key].parameters():
-        #             param.requires_grad = True
+            #     for key in network_list.keys():
+            #         for param in network_list[key].parameters():
+            #             param.requires_grad = True
 
             self.optimizer_domain.step()
             if self.bool_task:
                 self.optimizer_task.step()
-
 
         self.optimizer.step()
 
@@ -252,7 +263,6 @@ class ERM(Algorithm):
 
     def predict_task(self, x):
         return self.classifier_task(x)
-
 
 
 class Mixstyle(Algorithm):
@@ -381,8 +391,8 @@ class ARM(ERM):
 
 
 class SAM(ERM):
-    """Sharpness-Aware Minimization
-    """
+    """Sharpness-Aware Minimization"""
+
     @staticmethod
     def norm(tensor_list: List[torch.tensor], p=2):
         """Compute p-norm for tensor list"""
@@ -397,15 +407,22 @@ class SAM(ERM):
         self.optimizer.zero_grad()
 
         if self.bool_angle or self.bool_task:
-            network_list = {"class_feature": self.featurizer, "domain_feature": self.featurizer_domain, "class_classifier": self.classifier, "domain_classifier": self.classifier_domain}
+            network_list = {
+                "class_feature": self.featurizer,
+                "domain_feature": self.featurizer_domain,
+                "class_classifier": self.classifier,
+                "domain_classifier": self.classifier_domain,
+            }
             if self.bool_task:
                 network_list["task_classifier"] = self.classifier_task
-            
+
             all_d = torch.cat(d)
 
             loss_domain = F.cross_entropy(self.predict_domain(all_x), all_d)
 
-            loss_angle = torch.abs(F.cosine_similarity(self.featurizer(all_x), self.featurizer_domain(all_x), dim=1))
+            loss_angle = torch.abs(
+                F.cosine_similarity(self.featurizer(all_x), self.featurizer_domain(all_x), dim=1)
+            )
             loss_angle = torch.mean(loss_angle)
 
             loss = loss + loss_angle
@@ -422,7 +439,6 @@ class SAM(ERM):
         scale = self.hparams["rho"] / self.norm(grad_w)
         eps = [g * scale for g in grad_w]
 
-
         # 2. w' = w + eps(w)
         with torch.no_grad():
             for p, v in zip(self.network.parameters(), eps):
@@ -437,7 +453,9 @@ class SAM(ERM):
         if self.bool_angle:
             loss_domain = F.cross_entropy(self.predict_domain(all_x), all_d)
 
-            loss_angle = torch.abs(F.cosine_similarity(self.featurizer(all_x), self.featurizer_domain(all_x), dim=1))
+            loss_angle = torch.abs(
+                F.cosine_similarity(self.featurizer(all_x), self.featurizer_domain(all_x), dim=1)
+            )
             loss_angle = torch.mean(loss_angle)
 
             output["loss_domain"] = loss_domain.item()
@@ -448,7 +466,6 @@ class SAM(ERM):
 
             self.optimizer_domain.zero_grad()
             loss_domain.backward(retain_graph=True)
-
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -470,7 +487,6 @@ class AbstractDANN(Algorithm):
     """Domain-Adversarial Neural Networks (abstract class)"""
 
     def __init__(self, input_shape, num_classes, num_domains, hparams, conditional, class_balance):
-
         super(AbstractDANN, self).__init__(input_shape, num_classes, num_domains, hparams)
         self.bool_angle = hparams.bool_angle
         self.bool_task = hparams.bool_task
@@ -525,7 +541,6 @@ class AbstractDANN(Algorithm):
                 weight_decay=self.hparams["weight_decay"],
             )
 
-
     def update(self, x, y, d, **kwargs):
         self.update_count += 1
         output = {}
@@ -557,11 +572,10 @@ class AbstractDANN(Algorithm):
         input_grad = autograd.grad(
             disc_softmax[:, disc_labels].sum(), [disc_input], create_graph=True
         )[0]
-        grad_penalty = (input_grad ** 2).sum(dim=1).mean(dim=0)
+        grad_penalty = (input_grad**2).sum(dim=1).mean(dim=0)
         disc_loss += self.hparams["grad_penalty"] * grad_penalty
 
         d_steps_per_g = self.hparams["d_steps_per_g_step"]
-
 
         if self.bool_angle or self.bool_task:
             all_d = torch.cat(d)
@@ -581,7 +595,9 @@ class AbstractDANN(Algorithm):
             if self.bool_task:
                 task_label = [0] * all_d.shape[0] + [1] * all_y.shape[0]
                 task_label = torch.tensor(task_label).to("cuda")
-                task_features = torch.tensor(torch.cat((all_z.clone(), feature_domain.clone()))).to("cuda")
+                task_features = torch.tensor(torch.cat((all_z.clone(), feature_domain.clone()))).to(
+                    "cuda"
+                )
                 loss_task = F.cross_entropy(self.classifier_task(task_features), task_label)
                 output["task_loss"] = loss_task.item()
 
@@ -610,7 +626,7 @@ class AbstractDANN(Algorithm):
 
                 self.disc_opt.zero_grad()
                 self.gen_opt.zero_grad()
-                
+
                 loss_domain.backward(retain_graph=True)
                 gen_loss.backward()
 
@@ -620,10 +636,8 @@ class AbstractDANN(Algorithm):
                 output["gen_loss"] = gen_loss.item()
                 return output
 
-
         else:
             if self.update_count.item() % (1 + d_steps_per_g) < d_steps_per_g:
-
                 self.disc_opt.zero_grad()
                 disc_loss.backward()
                 self.disc_opt.step()
@@ -646,6 +660,7 @@ class AbstractDANN(Algorithm):
 
     def predict_task(self, x):
         return self.classifier_task(x)
+
 
 class DANN(AbstractDANN):
     """Unconditional DANN"""
@@ -804,16 +819,19 @@ class Mixup(ERM):
             objective += (1 - lam) * F.cross_entropy(predictions, yj)
 
         objective /= len(minibatches)
-        output = {"loss":objective.item()}
+        output = {"loss": objective.item()}
 
         self.optimizer.zero_grad()
 
         if self.bool_angle or self.bool_task:
-            network_list = {"class_feature": self.featurizer, "domain_feature": self.featurizer_domain,
-                            "class_classifier": self.classifier, "domain_classifier": self.classifier_domain}
+            network_list = {
+                "class_feature": self.featurizer,
+                "domain_feature": self.featurizer_domain,
+                "class_classifier": self.classifier,
+                "domain_classifier": self.classifier_domain,
+            }
             if self.bool_task:
                 network_list["task_classifier"] = self.classifier_task
-
 
             domain_minibatches = to_minibatch(x, d)
             domain_objective = 0
@@ -828,7 +846,7 @@ class Mixup(ERM):
                 domain_objective += (1 - lam) * F.cross_entropy(predictions_domain, dj)
 
             domain_objective /= len(domain_minibatches)
-            output["domain_loss"]= domain_objective.item()
+            output["domain_loss"] = domain_objective.item()
             self.optimizer_domain.zero_grad()
 
             all_x = torch.cat(x)
@@ -845,10 +863,11 @@ class Mixup(ERM):
             if self.bool_task:
                 task_label = [0] * all_d.shape[0] + [1] * all_y.shape[0]
                 task_label = torch.tensor(task_label).to("cuda")
-                task_features = torch.tensor(torch.cat((feature_class.clone(), feature_domain.clone()))).to("cuda")
+                task_features = torch.tensor(
+                    torch.cat((feature_class.clone(), feature_domain.clone()))
+                ).to("cuda")
                 loss_task = F.cross_entropy(self.classifier_task(task_features), task_label)
                 output["task_loss"] = loss_task.item()
-
 
             for key in network_list.keys():
                 if "class_classifier" in key or "domain_classifier" in key:
@@ -858,10 +877,8 @@ class Mixup(ERM):
                     for param in network_list[key].parameters():
                         param.requires_grad = False
 
-
             objective.backward(retain_graph=True)
             domain_objective.backward(retain_graph=True)
-
 
             if self.bool_angle:
                 objective = objective + loss_angle
@@ -880,7 +897,7 @@ class Mixup(ERM):
                     for param in network_list[key].parameters():
                         param.requires_grad = False
             domain_objective.backward(retain_graph=True)
-            
+
             for key in network_list.keys():
                 if "class_feature" in key or "task" in key:
                     for param in network_list[key].parameters():
@@ -899,7 +916,6 @@ class Mixup(ERM):
             self.optimizer_domain.step()
             if self.bool_task:
                 self.optimizer_task.step()
-
 
         self.optimizer.step()
 
@@ -1211,14 +1227,17 @@ class AbstractMMD(ERM):
 
         objective /= nmb
 
-        output = {"objective":objective.item()}
+        output = {"objective": objective.item()}
 
-        loss = (objective + (self.hparams["mmd_gamma"] * penalty))
-
+        loss = objective + (self.hparams["mmd_gamma"] * penalty)
 
         if self.bool_angle or self.bool_task:
-            network_list = {"class_feature": self.featurizer, "domain_feature": self.featurizer_domain,
-                        "class_classifier": self.classifier, "domain_classifier": self.classifier_domain}
+            network_list = {
+                "class_feature": self.featurizer,
+                "domain_feature": self.featurizer_domain,
+                "class_classifier": self.classifier,
+                "domain_classifier": self.classifier_domain,
+            }
             if self.bool_task:
                 network_list["task_classifier"] = self.classifier_task
 
@@ -1240,11 +1259,10 @@ class AbstractMMD(ERM):
 
             objective_domain /= nmb
             output["objective_domain"] = objective_domain.item()
-            loss_domain = (objective_domain + (self.hparams["mmd_gamma"] * penalty_domain))
-
+            loss_domain = objective_domain + (self.hparams["mmd_gamma"] * penalty_domain)
 
             if nmb > 1:
-                penalty_domain /= nmb * (nmb -1) / 2
+                penalty_domain /= nmb * (nmb - 1) / 2
 
             if self.bool_angle:
                 for i in range(nmb):
@@ -1252,7 +1270,6 @@ class AbstractMMD(ERM):
 
                 loss_angle /= nmb
                 output["angle_loss"] = loss_angle.item()
-
 
             if self.bool_task:
                 all_d = torch.cat(d)
@@ -1263,14 +1280,15 @@ class AbstractMMD(ERM):
                 all_x = torch.cat(x)
                 features_class_task = self.featurizer(all_x)
                 features_domain_task = self.featurizer_domain(all_x)
-                task_features = torch.tensor(torch.cat((features_class_task.clone(), features_domain_task.clone()))).to("cuda")
+                task_features = torch.tensor(
+                    torch.cat((features_class_task.clone(), features_domain_task.clone()))
+                ).to("cuda")
                 task_labels = torch.tensor(task_labels).to("cuda")
 
                 # task_labels = []
                 # for i in range(0, len(task_label)):
                 #     task_labels.append(torch.tensor(task_label[i]).to("cuda"))
-                
-                
+
                 # loss_task = []
                 # for task, task_label in zip(task_features, task_labels):
                 #     print(self.classifier_task(task).shape)
@@ -1305,7 +1323,7 @@ class AbstractMMD(ERM):
                     for param in network_list[key].parameters():
                         param.requires_grad = False
             loss_domain.backward(retain_graph=True)
-            
+
             for key in network_list.keys():
                 if "class_feature" in key or "task" in key:
                     for param in network_list[key].parameters():
@@ -1324,11 +1342,9 @@ class AbstractMMD(ERM):
             if self.bool_task:
                 self.optimizer_task.step()
 
-
         self.optimizer.step()
 
         # if self.bool_angle:
-            
 
         #     for param in self.featurizer.parameters():
         #         param.require_grad = False
@@ -1364,7 +1380,6 @@ class AbstractMMD(ERM):
         #     for param in self.classifier_domain.parameters():
         #         param.require_grad = True
 
-
         #     self.optimizer_domain.step()
 
         #     if torch.is_tensor(penalty_domain):
@@ -1377,13 +1392,13 @@ class AbstractMMD(ERM):
 
         # self.optimizer.step()
 
-
         if torch.is_tensor(penalty):
             penalty = penalty.item()
 
         output["penalty"] = penalty
 
         return output
+
 
 class MMD(AbstractMMD):
     """
@@ -1624,6 +1639,7 @@ class RSC(ERM):
 
         return {"loss": loss.item()}
 
+
 class MovingAvg:
     def __init__(self, network, network_domain=None):
         self.network = network
@@ -1640,18 +1656,26 @@ class MovingAvg:
 
     def update_sma(self):
         self.global_iter += 1
-        if self.global_iter>=self.sma_start_iter:
+        if self.global_iter >= self.sma_start_iter:
             self.sma_count += 1
             for param_q, param_k in zip(self.network.parameters(), self.network_sma.parameters()):
-                param_k.data = (param_k.data* self.sma_count + param_q.data)/(1.+self.sma_count)
+                param_k.data = (param_k.data * self.sma_count + param_q.data) / (
+                    1.0 + self.sma_count
+                )
             if self.bool_angle:
-                for param_q, param_k in zip(self.network_domain.parameters(), self.network_sma_domain.parameters()):
-                    param_k.data = (param_k.data * self.sma_count + param_q.data) / (1. + self.sma_count)
+                for param_q, param_k in zip(
+                    self.network_domain.parameters(), self.network_sma_domain.parameters()
+                ):
+                    param_k.data = (param_k.data * self.sma_count + param_q.data) / (
+                        1.0 + self.sma_count
+                    )
         else:
             for param_q, param_k in zip(self.network.parameters(), self.network_sma.parameters()):
                 param_k.data = param_q.data
             if self.bool_angle:
-                for param_q, param_k in zip(self.network_domain.parameters(), self.network_sma_domain.parameters()):
+                for param_q, param_k in zip(
+                    self.network_domain.parameters(), self.network_sma_domain.parameters()
+                ):
                     param_k.data = param_q.data
 
 
@@ -1789,22 +1813,28 @@ class MovingAvg:
 #         return self.network_sma_domain(x)
 
 
-
 class ERM_SMA(Algorithm, MovingAvg):
-    """ Empirical Risk Minimization (ERM) with Simple Moving Average (SMA) prediction model """
+    """Empirical Risk Minimization (ERM) with Simple Moving Average (SMA) prediction model"""
+
     def __init__(self, input_shape, num_classes, num_domains, hparams):
         Algorithm.__init__(self, input_shape, num_classes, num_domains, hparams)
         self.bool_angle = hparams.bool_angle
         self.featurizer = networks.Featurizer(input_shape, self.hparams)
-        self.classifier = networks.Classifier( self.featurizer.n_outputs, num_classes)
+        self.classifier = networks.Classifier(self.featurizer.n_outputs, num_classes)
         self.network = nn.Sequential(self.featurizer, self.classifier)
-        self.optimizer = torch.optim.Adam( self.network.parameters(), lr=self.hparams["lr"], weight_decay=self.hparams['weight_decay'] )
+        self.optimizer = torch.optim.Adam(
+            self.network.parameters(),
+            lr=self.hparams["lr"],
+            weight_decay=self.hparams["weight_decay"],
+        )
 
         if self.bool_angle:
             self.domain_hparam = self.hparams
             self.domain_hparam["domain"] = True
             self.featurizer_domain = networks.Featurizer(input_shape, self.domain_hparam)
-            self.classifier_domain = networks.Classifier(self.featurizer_domain.n_outputs, num_domains)
+            self.classifier_domain = networks.Classifier(
+                self.featurizer_domain.n_outputs, num_domains
+            )
             self.network_domain = nn.Sequential(self.featurizer_domain, self.classifier_domain)
 
             self.optimizer_domain = get_optimizer(
@@ -1819,10 +1849,8 @@ class ERM_SMA(Algorithm, MovingAvg):
             # self.featurizer_sma = nn.Sequential(*list(self.network_sma)[:-1])
             # self.featurizer_sma_domain = nn.Sequential(*list(self.network_sma_domain)[:-1])
 
-
         else:
             MovingAvg.__init__(self, self.network)
-
 
     def update(self, x, y, d, **kwargs):
         all_x = torch.cat([xi for xi in x])
@@ -1830,12 +1858,14 @@ class ERM_SMA(Algorithm, MovingAvg):
 
         loss = F.cross_entropy(self.network(all_x), all_y)
 
-        output={'loss':loss.item()}
+        output = {"loss": loss.item()}
 
         if self.bool_angle:
             all_d = torch.cat([di for di in d])
 
-            loss_angle = torch.abs(F.cosine_similarity(self.featurizer(all_x), self.featurizer_domain(all_x), dim=1))
+            loss_angle = torch.abs(
+                F.cosine_similarity(self.featurizer(all_x), self.featurizer_domain(all_x), dim=1)
+            )
             loss_angle = torch.mean(loss_angle)
 
             loss_domain = F.cross_entropy(self.network_domain(all_x), all_d)
