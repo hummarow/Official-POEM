@@ -11,16 +11,15 @@ else:
     device = "cpu"
 
 
-def eval_from_loader(algorithm, loader, weights,
-                         bool_angle=False,
-                         bool_task=False,
-                         env_num = -1,
-                         criterion_category=nn.CrossEntropyLoss(),
-                         criterion_domain=nn.CrossEntropyLoss(),
-                         criterion_task=nn.CrossEntropyLoss(), # discrimination loss
-                         criterion_angle=nn.CrossEntropyLoss(), # similarity loss
-                         debug=False,
-                         ):
+def eval_from_loader(
+    algorithm,
+    loader,
+    weights,
+    bool_angle=False,
+    bool_task=False,
+    env_num=-1,
+    debug=False,
+):
     metric = 0
     domain_metric = 0
     total = 0
@@ -45,14 +44,13 @@ def eval_from_loader(algorithm, loader, weights,
             domain_label = torch.tensor(d).to(device)
             with torch.no_grad():
                 domain_logits = algorithm.predict_domain(x)
-                domain_loss = criterion_domain(domain_logits, domain_label).item()
+                domain_loss = F.cross_entropy(domain_logits, domain_label).item()
 
             domain_losssum += domain_loss * B
 
         with torch.no_grad():
             logits = algorithm.predict(x)
-            loss = criterion_category(logits, y).item()
-
+            loss = algorithm.criterion_category(logits, y).item()
 
         losssum += loss * B
 
@@ -62,12 +60,12 @@ def eval_from_loader(algorithm, loader, weights,
             batch_weights = weights[weights_offset : weights_offset + len(x)]
             weights_offset += len(x)
         batch_weights = batch_weights.to(device)
-        if isinstance(criterion_category, nn.CrossEntropyLoss):
+        if isinstance(algorithm.criterion_category, nn.CrossEntropyLoss):
             if logits.size(1) == 1:
                 metric += (logits.gt(0).eq(y).float() * batch_weights).sum().item()
             else:
                 metric += (logits.argmax(1).eq(y).float() * batch_weights).sum().item()
-        elif isinstance(criterion_category, nn.MSELoss):
+        elif isinstance(algorithm.criterion_category, nn.MSELoss):
             pdist = nn.PairwiseDistance(p=2.0)
             metric += pdist(logits, y).sum().item()
 
@@ -75,17 +73,45 @@ def eval_from_loader(algorithm, loader, weights,
 
         if bool_angle or bool_task:
             if domain_logits.size(1) == 1:
-                domain_metric += (domain_logits.gt(0).eq(domain_label).float() * batch_weights).sum().item()
+                domain_metric += (
+                    (domain_logits.gt(0).eq(domain_label).float() * batch_weights).sum().item()
+                )
             else:
-                domain_metric += (domain_logits.argmax(1).eq(domain_label).float() * batch_weights).sum().item()
+                domain_metric += (
+                    (domain_logits.argmax(1).eq(domain_label).float() * batch_weights).sum().item()
+                )
+            feature_category = algorithm.featurizer(x)
+            feature_domain = algorithm.featurizer_domain(x)
 
         if bool_task:
-            loss_task1 = criterion_task(algorithm.predict_task(algorithm.extract(x)), torch.tensor([0] * int(x.shape[0])).to(device))
-            loss_task2 = criterion_task(algorithm.predict_task(algorithm.extract_domain(x)), torch.tensor([1] * int(x.shape[0])).to(device))
+            loss_task1 = F.cross_entropy(
+                algorithm.predict_task(feature_category),
+                torch.tensor([0] * int(x.shape[0])).to(device),
+            )
+            loss_task2 = F.cross_entropy(
+                algorithm.predict_task(feature_domain),
+                torch.tensor([1] * int(x.shape[0])).to(device),
+            )
             loss_task_sum += (loss_task1.item() + loss_task2.item()) / (2 * total)
 
         if bool_angle:
-            loss_angle_sum += torch.abs(criterion_angle(algorithm.predict_task(algorithm.extract(x)), algorithm.extract_domain(x)), dim=1).item() / total
+            # 왜 predict_task를 하는지 모르겠음
+            """
+            loss_angle_sum += (
+                torch.abs(
+                    F.cosine_similarity(
+                        algorithm.predict_task(algorithm.featurizer(x)), algorithm.featurizer_domain(x)
+                    ),
+                    dim=1,
+                ).item()
+                / total
+            )"""
+            loss_angle = (
+                torch.abs(F.cosine_similarity(feature_category, feature_domain, dim=1))
+                .mean()
+                .item()
+            )
+            loss_angle_sum += loss_angle
 
         if debug:
             break
@@ -98,63 +124,91 @@ def eval_from_loader(algorithm, loader, weights,
     if bool_angle or bool_task:
         domain_metric_average = domain_metric / total
         domain_loss = domain_losssum / total
-
-        return metric_average, loss, domain_metric_average, domain_loss, loss_task_sum, loss_angle_sum
+        additional_return = (domain_metric_average, domain_loss, loss_task_sum, loss_angle_sum)
+        return (
+            metric_average,
+            loss,
+            domain_metric_average,
+            domain_loss,
+            loss_task_sum,
+            loss_angle_sum,
+        )
     else:
         return metric_average, loss
 
 
-def accuracy_from_loader(algorithm, loader, weights,
-                         bool_angle=False,
-                         bool_task=False,
-                         env_num = -1,
-                         criterion_category=None, criterion_domain=None, criterion_task=None, criterion_angle=None,
-                         debug=False,
-                         ):
-    return eval_from_loader(algorithm, loader, weights, bool_angle, bool_task, env_num, debug,
-                            criterion_category=nn.CrossEntropyLoss(),
-                            criterion_domain=nn.CrossEntropyLoss(),
-                            criterion_task=nn.CrossEntropyLoss(),
-                            criterion_angle=nn.CrossEntropyLoss(),
-                            )
+def accuracy_from_loader(
+    algorithm,
+    loader,
+    weights,
+    bool_angle=False,
+    bool_task=False,
+    env_num=-1,
+    debug=False,
+):
+    return eval_from_loader(
+        algorithm,
+        loader,
+        weights,
+        bool_angle,
+        bool_task,
+        env_num,
+        debug,
+    )
 
 
-def _eval(algorithm, loader_kwargs, weights, bool_angle=False, bool_task=False, env_num=-1,
-          criterion_category=nn.CrossEntropyLoss(),
-          criterion_domain=nn.CrossEntropyLoss(),
-          criterion_task=nn.CrossEntropyLoss(),
-          criterion_angle=nn.CrossEntropyLoss(),
-          **kwargs,
-          ):
+def _eval(
+    algorithm,
+    loader_kwargs,
+    weights,
+    bool_angle=False,
+    bool_task=False,
+    env_num=-1,
+    **kwargs,
+):
     if isinstance(loader_kwargs, dict):
         loader = FastDataLoader(**loader_kwargs)
     elif isinstance(loader_kwargs, FastDataLoader):
         loader = loader_kwargs
     else:
         raise ValueError(loader_kwargs)
-    return eval_from_loader(algorithm, loader, weights, bool_angle, bool_task, env_num, 
-                            criterion_category,
-                            criterion_domain,
-                            criterion_task,
-                            criterion_angle,
-                            **kwargs,
-                            )
+    return eval_from_loader(
+        algorithm,
+        loader,
+        weights,
+        bool_angle,
+        bool_task,
+        env_num,
+        **kwargs,
+    )
 
 
-def accuracy(algorithm, loader_kwargs, weights, bool_angle=False, bool_task=False, env_num=-1, **kwargs):
-    return _eval(algorithm, loader, weights, bool_angle, bool_task, env_num,
-                 criterion_category=nn.CrossEntropyLoss(),
-                 criterion_domain=nn.CrossEntropyLoss(),
-                 criterion_task=nn.CrossEntropyLoss(),
-                 criterion_angle=nn.CrossEntropyLoss(),
-                 **kwargs,
-                 )
+def accuracy(
+    algorithm, loader_kwargs, weights, bool_angle=False, bool_task=False, env_num=-1, **kwargs
+):
+    return _eval(
+        algorithm,
+        loader_kwargs,
+        weights,
+        bool_angle,
+        bool_task,
+        env_num,
+        **kwargs,
+    )
 
 
 class Evaluator:
     def __init__(
-        self, test_envs, eval_meta, n_envs, logger, evalmode="fast", debug=False, target_env=None, bool_angle=False, bool_task=False,
-        criterion='classifier'
+        self,
+        test_envs,
+        eval_meta,
+        n_envs,
+        logger,
+        bool_angle,
+        bool_task,
+        evalmode="fast",
+        debug=False,
+        target_env=None,
     ):
         all_envs = list(range(n_envs))
         train_envs = sorted(set(all_envs) - set(test_envs))
@@ -167,22 +221,6 @@ class Evaluator:
         self.debug = debug
         self.bool_angle = bool_angle
         self.bool_task = bool_task
-
-        if criterion == 'classify':
-            self.criterion_category=nn.CrossEntropyLoss()
-            self.criterion_domain=nn.CrossEntropyLoss()
-            self.criterion_task=nn.CrossEntropyLoss()
-            self.criterion_angle=nn.CrossEntropyLoss()
-            self.best = 'max'
-        elif criterion == 'coordinate':
-            self.criterion_category=nn.MSELoss()
-            self.criterion_domain=nn.CrossEntropyLoss()
-            self.criterion_task=nn.CrossEntropyLoss()
-            self.criterion_angle=nn.CrossEntropyLoss()
-            self.best = 'min'
-        else:
-            raise ValueError("criterion should be either 'classify' or 'regression'")
-
 
         if target_env is not None:
             self.set_target_env(target_env)
@@ -219,12 +257,14 @@ class Evaluator:
                 continue
 
             is_test = env_num in self.test_envs
-            metric_value, loss = _eval(algorithm, loader_kwargs, weights, debug=self.debug,
-                              criterion_category=self.criterion_category,
-                              criterion_domain=self.criterion_domain,
-                              criterion_task=self.criterion_task,
-                              criterion_angle=self.criterion_angle,
-                              )
+            metric_value, loss = _eval(
+                algorithm,
+                loader_kwargs,
+                weights,
+                debug=self.debug,
+                env_num=env_num,
+            )
+
             metric_values[name] = metric_value
             losses[name] = loss
 
@@ -239,19 +279,20 @@ class Evaluator:
                         else:
                             num = env_num
 
-                        _, _, domain_acc, domain_loss, task_loss, angle_loss = _eval(algorithm, loader_kwargs, weights,
-                                                                                     self.bool_angle, self.bool_task, num,
-                                                                                     debug=self.debug,
-                                                                                     criterion_category=self.criterion_category,
-                                                                                     criterion_domain=self.criterion_domain,
-                                                                                     criterion_task=self.criterion_task,
-                                                                                     criterion_angle=self.criterion_angle,
-                                                                                     )
+                        _, _, domain_acc, domain_loss, task_loss, angle_loss = _eval(
+                            algorithm,
+                            loader_kwargs,
+                            weights,
+                            self.bool_angle,
+                            self.bool_task,
+                            env_num=num,
+                            debug=self.debug,
+                        )
                         summaries["task_eval_loss"] += task_loss / n_train_envs
                         summaries["angle_eval_loss"] += angle_loss / n_train_envs
                         summaries["domain_eval_loss"] += domain_loss / n_train_envs
-                        # accuracies["ac_d_" + name +"_"+str(num)] = domain_acc
-                        # losses["lo_d_" + name+"_"+str(num)] = domain_loss
+                        losses["ac_d_" + name + "_" + str(num)] = domain_acc
+                        losses["lo_d_" + name + "_" + str(num)] = domain_loss
             elif is_test:
                 summaries["test_" + inout] += metric_value / n_test_envs
 

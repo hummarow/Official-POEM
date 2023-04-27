@@ -188,7 +188,8 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         evalmode=args.evalmode,
         debug=args.debug,
         target_env=target_env,
-        criterion="coordinate",
+        bool_angle=args.bool_angle,
+        bool_task=args.bool_task,
     )
 
     swad = None
@@ -240,9 +241,8 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
                 results[key] = np.mean(val)
 
             eval_start_time = time.time()
-            metric_values, summaries = evaluator.evaluate(algorithm)
+            metric_values, summaries, losses = evaluator.evaluate(algorithm, ret_losses=True)
             results["eval_time"] = time.time() - eval_start_time
-
             # results = (epochs, loss, step, step_time)
             results_keys = (
                 list(summaries.keys()) + sorted(metric_values.keys()) + list(results.keys())
@@ -319,8 +319,10 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     # find best
     logger.info("---")
     records = Q(records)
+    mode = "min" if algorithm.criterion == "coordinate" else "max"
     oracle_best = records.argbest("test_out", evaluator.best)["test_in"]
     iid_best = records.argbest("train_out", evaluator.best)["test_in"]
+    best_domain_loss = records.argbest("train_out", evaluator.best)["domain_eval_loss"]
     last = records[-1]["test_in"]
 
     if hparams.indomain_test:
@@ -338,6 +340,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         "last": last,
         "last (inD)": last_indomain,
         "iid (inD)": iid_best_indomain,
+        "domain_loss": best_domain_loss,
     }
 
     # Evaluate SWAD

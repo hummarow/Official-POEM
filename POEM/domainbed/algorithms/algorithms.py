@@ -93,14 +93,16 @@ class ERM(Algorithm):
         super(ERM, self).__init__(input_shape, num_classes, num_domains, hparams)
         self.bool_angle = hparams.bool_angle
         self.bool_task = hparams.bool_task
+        self.criterion = criterion
 
-        if criterion == "coordinate":
+        if self.criterion == "coordinate":
             self.criterion_category = nn.MSELoss()
         else:
             self.criterion_category = nn.CrossEntropyLoss()
 
         # 우선 conv만 사용
         network = "conv"
+        # 네트워크 설정
         if network == "conv":
             # CNN 불러온 뒤 featurizer와 dense 분리.
             self.network = CNN(input_shape[0], out_features=3)
@@ -263,6 +265,12 @@ class ERM(Algorithm):
 
     def predict_task(self, x):
         return self.classifier_task(x)
+
+    def extract(self, x):
+        return self.featurizer(x)
+
+    def extract_domain(self, x):
+        return self.featurizer_domain(x)
 
 
 class Mixstyle(Algorithm):
