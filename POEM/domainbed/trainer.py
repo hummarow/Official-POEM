@@ -320,9 +320,9 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     logger.info("---")
     records = Q(records)
     mode = "min" if algorithm.criterion == "coordinate" else "max"
-    oracle_best = records.argbest("test_out", evaluator.best)["test_in"]
-    iid_best = records.argbest("train_out", evaluator.best)["test_in"]
-    best_domain_loss = records.argbest("train_out", evaluator.best)["domain_eval_loss"]
+    oracle_best = records.argbest("test_out", mode)["test_in"]
+    iid_best = records.argbest("train_out", mode)["test_in"]
+    best_domain_loss = records.argbest("train_out", mode)["domain_eval_loss"]
     last = records[-1]["test_in"]
 
     if hparams.indomain_test:
@@ -331,7 +331,7 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     else:
         in_key = "train_out"
 
-    iid_best_indomain = records.argbest("train_out", evaluator.best)[in_key]
+    iid_best_indomain = records.argbest("train_out", mode)[in_key]
     last_indomain = records[-1][in_key]
 
     ret = {

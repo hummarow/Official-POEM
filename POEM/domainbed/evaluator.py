@@ -291,7 +291,7 @@ class Evaluator:
                         summaries["task_eval_loss"] += task_loss / n_train_envs
                         summaries["angle_eval_loss"] += angle_loss / n_train_envs
                         summaries["domain_eval_loss"] += domain_loss / n_train_envs
-                        losses["ac_d_" + name + "_" + str(num)] = domain_acc
+                        summaries["ac_d_" + name + "_" + str(num)] = domain_acc
                         losses["lo_d_" + name + "_" + str(num)] = domain_loss
             elif is_test:
                 summaries["test_" + inout] += metric_value / n_test_envs
