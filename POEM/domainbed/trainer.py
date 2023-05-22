@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.utils.data
+from torchsummary import summary
 
 from domainbed.datasets import get_dataset, split_dataset
 from domainbed import algorithms
@@ -117,7 +118,6 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
     for env_i, ((env, env_weights), batch_size) in enumerate(
         iterator.train(zip(in_splits, batch_sizes))
     ):
-        print(env_i)
         train_loaders.append(
             InfiniteDataLoader(
                 dataset=env,

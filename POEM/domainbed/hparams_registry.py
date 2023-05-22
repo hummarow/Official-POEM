@@ -28,7 +28,7 @@ def _hparams(algorithm, dataset, random_state):
         if dataset == "DomainNet":
             hparams["batch_size"] = (32, int(2 ** random_state.uniform(3, 5)))
         elif dataset == "EEG":
-            hparams["batch_size"] = (1, int(2 ** random_state.uniform(3, 5)))
+            hparams["batch_size"] = (4, int(2 ** random_state.uniform(3, 5)))
         else:
             hparams["batch_size"] = (32, int(2 ** random_state.uniform(3, 5.5)))
         if algorithm == "ARM":

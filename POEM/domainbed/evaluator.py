@@ -268,6 +268,8 @@ class Evaluator:
             metric_values[name] = metric_value
             losses[name] = loss
 
+            domain_accs = []
+
             if env_num in self.train_envs:
                 summaries["train_" + inout] += metric_value / n_train_envs
                 if inout == "out":
@@ -292,9 +294,12 @@ class Evaluator:
                         summaries["angle_eval_loss"] += angle_loss / n_train_envs
                         summaries["domain_eval_loss"] += domain_loss / n_train_envs
                         summaries["ac_d_" + name + "_" + str(num)] = domain_acc
+                        domain_accs.append(domain_acc)
                         losses["lo_d_" + name + "_" + str(num)] = domain_loss
             elif is_test:
                 summaries["test_" + inout] += metric_value / n_test_envs
+
+        summaries["ac_d_avg"] = np.mean(domain_accs)
 
         if ret_losses:
             return metric_values, summaries, losses
