@@ -228,6 +228,28 @@ class EEG(MultipleDomainDataset):
         self.num_classes = 0  # Regression task
 
 
+class PSD(MultipleDomainDataset):
+    CHECKPOINT_FREQ = 200
+    ENVIRONMENTS = [f'subject{n}' for n in range(0, 30)]
+
+    def __init__(self, root):
+        super().__init__()
+        root = os.path.join(root, "PSD/")
+        environments = [f.name for f in os.scandir(root)]
+        environments = sorted(environments)
+        self.environments = environments
+
+        self.datasets = []
+        for environment in environments:
+            path = os.path.join(root, environment)
+            env_dataset = eeg_loader.PSDDataset(path)
+
+            self.datasets.append(env_dataset)
+
+        self.input_shape = self.datasets[0].input_shape  # (channel, timestep(frame))
+        self.num_classes = 0  # Regression task
+
+
 class VLCS(MultipleEnvironmentImageFolder):
     CHECKPOINT_FREQ = 200
     ENVIRONMENTS = ["C", "L", "S", "V"]

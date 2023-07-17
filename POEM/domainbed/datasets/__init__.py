@@ -30,7 +30,7 @@ def set_transforms(dset, data_type, hparams, algorithm_class=None):
     elif data_type == "mnist":
         # No augmentation for mnist
         dset.transforms = {"x": lambda x: x}
-    elif data_type == "eeg":
+    elif data_type == "eeg" or data_type == "psd":
         # No augmentation for eeg
         dset.transforms = {"x": lambda x: np.expand_dims(x, axis=0)}
     else:
@@ -45,6 +45,7 @@ def get_dataset(test_envs, args, hparams, algorithm_class=None):
     """Get dataset and split."""
     is_mnist = "MNIST" in args.dataset
     is_eeg = "EEG" in args.dataset
+    is_psd = "PSD" in args.dataset
     dataset = vars(datasets)[args.dataset](args.data_dir)
     #  if not isinstance(dataset, MultipleEnvironmentImageFolder):
     #      raise ValueError("SMALL image datasets are not implemented (corrupted), for transform.")
@@ -74,6 +75,9 @@ def get_dataset(test_envs, args, hparams, algorithm_class=None):
         elif is_eeg:
             in_type = "eeg"
             out_type = "eeg"
+        elif is_psd:
+            in_type = "psd"
+            out_type = "psd"
 
         set_transforms(in_, in_type, hparams, algorithm_class)
         set_transforms(out, out_type, hparams, algorithm_class)

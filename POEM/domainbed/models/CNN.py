@@ -7,19 +7,21 @@ import torch.utils.model_zoo as model_zoo
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, num_conv=2):
-        '''
+        """
         Convolution block
         :param num_conv: Convolution Block 속 convolution layer 개수. Default: 2.
         :type num_conv: int
-        '''
+        """
         super().__init__()
         layers = []
-        layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding='same'))
+        layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding="same"))
         layers.append(nn.ReLU(inplace=True))
-        for i in range(num_conv-1):
-            layers.append(nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding='same'))
+        for i in range(num_conv - 1):
+            layers.append(
+                nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding="same")
+            )
             layers.append(nn.ReLU(inplace=True))
-#         layers.append(nn.MaxPool2d(3,2, padding=(out_channels)))
+        #         layers.append(nn.MaxPool2d(3,2, padding=(out_channels)))
         self.conv = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -36,27 +38,30 @@ class CNN(nn.Module):
         conv2 = ConvBlock(16, 32)
         conv3 = ConvBlock(32, 64, num_conv=3)
         conv4 = ConvBlock(64, 128, num_conv=3)
-                                     
-        self.flat = nn.Flatten()
-        dense1 = nn.Sequential(nn.Linear(12800, 1024),
-                               nn.ReLU(inplace=True),
-                               )
-        dense2 = nn.Sequential(nn.Linear(1024, 1024),
-                                    nn.ReLU(inplace=True),
-                                    )
-        dense3 = nn.Linear(1024, out_features)
 
-        self.featurizer = nn.Sequential(conv1,
-                                        conv2,
-                                        conv3,
-                                        conv4,
-                                        self.flat,
-                                        )
-        self.featurizer.n_outputs = 12800
-        self.dense = nn.Sequential(dense1,
-                                   dense2,
-                                   dense3,
-                                   )
+        self.flat = nn.Flatten()
+        dense1 = nn.Sequential(
+            nn.Linear(1024, 32),
+            nn.ReLU(inplace=True),
+        )
+        # dense2 = nn.Sequential(nn.Linear(1024, 1024),
+        #                             nn.ReLU(inplace=True),
+        #                             )
+        dense2 = nn.Linear(32, out_features)
+
+        self.featurizer = nn.Sequential(
+            conv1,
+            conv2,
+            conv3,
+            conv4,
+            self.flat,
+        )
+        self.featurizer.n_outputs = 1024
+        self.dense = nn.Sequential(
+            dense1,
+            dense2,
+            #    dense3,
+        )
 
     def forward(self, x):
         f = self.featurizer(x)

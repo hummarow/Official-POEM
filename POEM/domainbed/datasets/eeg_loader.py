@@ -23,6 +23,36 @@ class EEGDataset(Dataset):
         # Random shuffle
         idx = np.random.permutation(len(self.xs))
         self.xs, self.ys = self.xs[idx], self.ys[idx]
+        self.input_shape = self.xs[0].shape
+
+    def __len__(self):
+        return len(self.xs)
+
+    def __getitem__(self, idx):
+        return self.xs[idx], self.ys[idx]
+
+
+class PSDDataset(Dataset):
+    def __init__(self, path: str):
+        '''
+        Create pytorch dataset from .h5 file.
+        path: full path of the h5 file.
+        '''
+        f = h5py.File(path, "r")
+        self.xs = []
+        self.ys = []
+        y = f["y"][:].squeeze()
+        for x in f["x"][:]:
+            self.xs.append(x)
+            self.ys.append(y)
+
+        self.xs = np.array(self.xs)
+        self.ys = np.array(self.ys)
+
+        # Random shuffle
+        idx = np.random.permutation(len(self.xs))
+        self.xs, self.ys = self.xs[idx], self.ys[idx]
+        self.input_shape = self.xs[0].shape
 
     def __len__(self):
         return len(self.xs)

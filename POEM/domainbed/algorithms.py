@@ -28,17 +28,20 @@ from domainbed.models.resnet_mixstyle2 import (
     resnet50_mixstyle2_L234_p0d5_a0d1,
 )
 from domainbed.models.CNN import CNN
+from domainbed.models.MLP import MLP
 
 
 def to_minibatch(x, y):
     minibatches = list(zip(x, y))
     return minibatches
 
+
 def get_algorithm_class(algorithm_name):
     """Return the algorithm class with the given name."""
     if algorithm_name not in globals():
         raise NotImplementedError("Algorithm not found: {}".format(algorithm_name))
     return globals()[algorithm_name]
+
 
 class Algorithm(torch.nn.Module, ABC):
     """
@@ -106,9 +109,14 @@ class ERM(Algorithm):
             self.criterion_category = nn.CrossEntropyLoss()
 
         # 우선 conv만 사용
-        network = "conv"
+        network = "mlp"
         # 네트워크 설정
-        if network == "conv":
+        if network == "mlp":
+            # self.network = MLP(input_shape[0], out_features=3)
+            self.network = CNN(input_shape[0], out_features=3)
+            self.featurizer = self.network.featurizer
+            self.classifier = self.network.dense
+        elif network == "conv":
             # CNN 불러온 뒤 featurizer와 dense 분리.
             self.network = CNN(input_shape[0], out_features=3)
             self.featurizer = self.network.featurizer
@@ -131,7 +139,12 @@ class ERM(Algorithm):
         if self.bool_angle or self.bool_task:
             self.domain_hparam = self.hparams
             self.domain_hparam["domain"] = True
-            if network == "conv":
+            if network == "mlp":
+                # self.network = MLP(input_shape[0], out_features=num_domains)
+                self.network_domain = CNN(input_shape[0], out_features=num_domains)
+                self.featurizer = self.network.featurizer
+                self.classifier = self.network.dense
+            elif network == "conv":
                 self.network_domain = CNN(input_shape[0], out_features=num_domains)
                 self.featurizer_domain = self.network_domain.featurizer
                 self.classifier_domain = self.network_domain.dense
