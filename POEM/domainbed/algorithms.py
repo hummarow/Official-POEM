@@ -142,8 +142,8 @@ class ERM(Algorithm):
             if network == "mlp":
                 # self.network = MLP(input_shape[0], out_features=num_domains)
                 self.network_domain = CNN(input_shape[0], out_features=num_domains)
-                self.featurizer = self.network.featurizer
-                self.classifier = self.network.dense
+                self.featurizer_domain= self.network.featurizer
+                self.classifier_domain = self.network.dense
             elif network == "conv":
                 self.network_domain = CNN(input_shape[0], out_features=num_domains)
                 self.featurizer_domain = self.network_domain.featurizer
