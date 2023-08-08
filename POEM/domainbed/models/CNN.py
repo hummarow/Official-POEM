@@ -34,17 +34,16 @@ class CNN(nn.Module):
     def __init__(self, in_channels=1, out_features=3):
         super().__init__()
         # backbone network
-        conv1 = ConvBlock(1, 16)
-        conv2 = ConvBlock(16, 32)
-        conv3 = ConvBlock(32, 64, num_conv=3)
-        conv4 = ConvBlock(64, 128, num_conv=3)
+        conv1 = ConvBlock(1, 4, num_conv=1)
+        conv2 = ConvBlock(4, 16, num_conv=1)
+        # conv3 = ConvBlock(16, 16, num_conv=1)
 
         self.flat = nn.Flatten()
         dense1 = nn.Sequential(
-            nn.Linear(1024, 32),
+            nn.Linear(1536, 32),
             nn.ReLU(inplace=True),
         )
-        # dense2 = nn.Sequential(nn.Linear(1024, 1024),
+        # dense2 = nn.Sequential(nn.Linear(1536, 1536),
         #                             nn.ReLU(inplace=True),
         #                             )
         dense2 = nn.Linear(32, out_features)
@@ -52,11 +51,10 @@ class CNN(nn.Module):
         self.featurizer = nn.Sequential(
             conv1,
             conv2,
-            conv3,
-            conv4,
+            # conv3,
             self.flat,
         )
-        self.featurizer.n_outputs = 1024
+        self.featurizer.n_outputs = 1536
         self.dense = nn.Sequential(
             dense1,
             dense2,
@@ -91,6 +89,58 @@ class CNN(nn.Module):
         mu = x.mean(dim=[2, 3])
         sig = x.std(dim=[2, 3])
         return torch.cat([mu, sig], 1)
+
+
+class RNN(nn.Module):
+    def __init__(self, in_channels=1, out_features=3):
+        super().__init__()
+
+        class RNNWrapper(nn.Module):
+            """
+            Extract and return only the output from a tuple, which is returned by an RNN.
+            This class should be designed to be used within an nn.Sequential.
+            """
+
+            def __init__(self, rnn):
+                super().__init__()
+                self.rnn = rnn
+
+            def forward(self, x):
+                return self.rnn(x)[0][:, -1, :]
+
+        class Squeeze(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.squeeze(x, 1)
+
+        self.flat = nn.Flatten()
+        self.featurizer = nn.Sequential(
+            Squeeze(),
+            RNNWrapper(
+                nn.RNN(input_size=63, hidden_size=63, num_layers=2, batch_first=True)
+            ),  # (N, L, H_in): (112, 400, 63)
+            self.flat,
+        )
+        dense1 = nn.Sequential(
+            nn.Linear(63, 16),
+            nn.ReLU(inplace=True),
+        )
+        dense2 = nn.Linear(16, out_features)
+
+        self.featurizer.n_outputs = 63
+
+        self.dense = nn.Sequential(
+            dense1,
+            dense2,
+            #    dense3,
+        )
+
+    def forward(self, x):
+        f = self.featurizer(x)
+        v = self.dense(f)
+        return v
 
 
 def init_pretrained_weights(model, model_url):

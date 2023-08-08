@@ -19,6 +19,7 @@ def _hparams(algorithm, dataset, random_state):
     hparams["class_balanced"] = (False, False)
     hparams["scheduler"] = ("const", "const")
     hparams["optimizer"] = ("adam", "adam")
+    hparams["early_stop"] = (2, 2)
 
     hparams["freeze_bn"] = (True, True)
     hparams["pretrained"] = (True, True)  # only for ResNet

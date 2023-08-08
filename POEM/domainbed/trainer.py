@@ -201,8 +201,15 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
 
     last_results_keys = None
     records = []
-    epochs_path = args.out_dir / "results.jsonl"
+    epochs_path = args.out_dir / "results.json"
+    best_val_loss = float("inf")
+    patient = 0
+    ckpt_dir = args.out_dir / "checkpoints"
+    ckpt_dir.mkdir(exist_ok=True)
 
+    test_env_str = ",".join(map(str, test_envs))
+    filename = f"TE{test_env_str}_best.pth"
+    path = ckpt_dir / filename
     for step in range(n_steps):
         step_start_time = time.time()
         # batches_dictlist: [{env0_data_key: tensor, env0_...}, env1_..., ...]
@@ -210,12 +217,13 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
         # batches: {data_key: [env0_tensor, ...], ...}
         batches = misc.merge_dictlist(batches_dictlist)
 
-        # to devic
+        # to device
         batches = {
             key: [tensor.to(device) for tensor in tensorlist] for key, tensorlist in batches.items()
         }
         # 배치 parse
         inputs = {**batches, "step": step}
+
         # Train
         step_vals = algorithm.update(**inputs)
 
@@ -242,6 +250,42 @@ def train(test_envs, args, hparams, n_steps, checkpoint_freq, logger, writer, ta
 
             eval_start_time = time.time()
             metric_values, summaries, losses = evaluator.evaluate(algorithm, ret_losses=True)
+            # Restore best model
+            # According to model selection method of 'Training-domain validation set'
+            if hparams["early_stop"]:
+                val_loss = summaries["train_out"]
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patient = 0
+                    # Save best model
+                    save_dict = {
+                        "args": vars(args),
+                        "model_hparams": dict(hparams),
+                        "test_envs": test_envs,
+                        "model_dict": algorithm.cpu().state_dict(),
+                    }
+                    algorithm.cuda()
+                    if not args.debug:
+                        torch.save(save_dict, path)
+                    logger.debug("DEBUG Mode -> no save (org path: %s)" % path)
+                else:
+                    patient += 1
+                    if patient >= hparams["early_stop"]:
+                        # Restore best model
+                        logger.info("Restore best model at step %d" % step)
+                        save_dict = torch.load(path)
+                        algorithm.load_state_dict(save_dict["model_dict"])
+                        algorithm.cuda()
+                        # Stop training
+                        logger.info("Early stop at step %d" % step)
+                        # Print best results
+                        metric_values, summaries = evaluator.evaluate(algorithm)
+                        results = {**summaries, **metric_values}
+                        row = misc.to_row([results[key] for key in results_keys if key in results])
+                        # Print
+                        logger.info(row)
+                        break
+
             results["eval_time"] = time.time() - eval_start_time
             # results = (epochs, loss, step, step_time)
             results_keys = (

@@ -27,7 +27,7 @@ from domainbed.models.resnet_mixstyle2 import (
     resnet18_mixstyle2_L234_p0d5_a0d1,
     resnet50_mixstyle2_L234_p0d5_a0d1,
 )
-from domainbed.models.CNN import CNN
+from domainbed.models.CNN import CNN, RNN
 from domainbed.models.MLP import MLP
 
 
@@ -113,7 +113,7 @@ class ERM(Algorithm):
         # 네트워크 설정
         if network == "mlp":
             # self.network = MLP(input_shape[0], out_features=3)
-            self.network = CNN(input_shape[0], out_features=3)
+            self.network = RNN(input_shape[0], out_features=3)
             self.featurizer = self.network.featurizer
             self.classifier = self.network.dense
         elif network == "conv":
@@ -141,8 +141,8 @@ class ERM(Algorithm):
             self.domain_hparam["domain"] = True
             if network == "mlp":
                 # self.network = MLP(input_shape[0], out_features=num_domains)
-                self.network_domain = CNN(input_shape[0], out_features=num_domains)
-                self.featurizer_domain= self.network.featurizer
+                self.network_domain = RNN(input_shape[0], out_features=num_domains)
+                self.featurizer_domain = self.network.featurizer
                 self.classifier_domain = self.network.dense
             elif network == "conv":
                 self.network_domain = CNN(input_shape[0], out_features=num_domains)
